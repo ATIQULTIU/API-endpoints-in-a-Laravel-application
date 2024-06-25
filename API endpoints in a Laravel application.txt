@@ -1,0 +1,277 @@
+To achieve the requirements for creating API endpoints in a Laravel application that handles authentication and product management, we'll follow these steps:
+
+### 1. Setup
+Ensure you have a Laravel project setup. If not, create one using:
+sh
+composer create-project --prefer-dist laravel/laravel myapp
+
+
+Install Passport:
+sh
+composer require laravel/passport
+
+
+Add Passport service provider in config/app.php:
+php
+Laravel\Passport\PassportServiceProvider::class,
+
+
+Migrate the database and install Passport:
+sh
+php artisan migrate
+php artisan passport:install
+
+
+### 2. Database Schema
+
+Create migrations for the tables. Here's an example of the products table:
+sh
+php artisan make:migration create_products_table
+
+
+Define the schema in the migration file:
+php
+public function up()
+{
+    Schema::create('products', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->string('sku');
+        $table->string('symbology');
+        $table->foreignId('brand_id')->constrained();
+        $table->foreignId('category_id')->constrained();
+        $table->foreignId('unit_id')->constrained();
+        $table->decimal('price', 10, 2);
+        $table->integer('qty');
+        $table->integer('alert_qty');
+        $table->string('tax_method');
+        $table->foreignId('tax_id')->constrained();
+        $table->boolean('has_stock');
+        $table->boolean('has_expiry_date');
+        $table->date('expiry_date')->nullable();
+        $table->text('details')->nullable();
+        $table->boolean('is_active');
+        $table->timestamps();
+        $table->softDeletes();
+    });
+}
+
+
+Repeat the process for other tables (brands, categories, units, taxes, warehouses, product_quantities, attachments).
+
+### 3. Authentication
+
+In AuthServiceProvider.php, add:
+php
+use Laravel\Passport\Passport;
+
+public function boot()
+{
+    $this->registerPolicies();
+    Passport::routes();
+}
+
+
+Update config/auth.php:
+php
+'guards' => [
+    'api' => [
+        'driver' => 'passport',
+        'provider' => 'users',
+    ],
+],
+
+
+### 4. Models and Relationships
+
+Define models and relationships, for example, Product.php:
+php
+class Product extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $fillable = [
+        'name', 'sku', 'symbology', 'brand_id', 'category_id', 'unit_id', 'price', 'qty', 
+        'alert_qty', 'tax_method', 'tax_id', 'has_stock', 'has_expiry_date', 'expiry_date', 
+        'details', 'is_active'
+    ];
+
+    public function brand()
+    {
+        return $this->belongsTo(Brand::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function unit()
+    {
+        return $this->belongsTo(Unit::class);
+    }
+
+    public function tax()
+    {
+        return $this->belongsTo(Tax::class);
+    }
+
+    public function quantities()
+    {
+        return $this->hasMany(ProductQuantity::class);
+    }
+
+    public function attachments()
+    {
+        return $this->morphMany(Attachment::class, 'attachmentable');
+    }
+}
+
+
+### 5. API Endpoint
+
+Create a controller for products:
+sh
+php artisan make:controller ProductController
+
+
+Implement CRUD operations in ProductController.php:
+php
+class ProductController extends Controller
+{
+    public function index()
+    {
+        $products = Product::with(['brand', 'category', 'unit', 'tax', 'quantities', 'attachments'])->get();
+        return response()->json([
+            'success' => true,
+            'status' => 200,
+            'message' => 'Products retrieved successfully!',
+            'data' => $products
+        ]);
+    }
+
+    public function show($id)
+    {
+        $product = Product::with(['brand', 'category', 'unit', 'tax', 'quantities', 'attachments'])->findOrFail($id);
+        return response()->json([
+            'success' => true,
+            'status' => 200,
+            'message' => 'Product retrieved successfully!',
+            'data' => $product
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $product = Product::create($request->all());
+        return response()->json([
+            'success' => true,
+            'status' => 201,
+            'message' => 'Product created successfully!',
+            'data' => $product
+        ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $product = Product::findOrFail($id);
+        $product->update($request->all());
+        return response()->json([
+            'success' => true,
+            'status' => 200,
+            'message' => 'Product updated successfully!',
+            'data' => $product
+        ]);
+    }
+
+    public function destroy($id)
+    {
+        $product = Product::findOrFail($id);
+        $product->delete();
+        return response()->json([
+            'success' => true,
+            'status' => 200,
+            'message' => 'Product deleted successfully!'
+        ]);
+    }
+}
+
+
+### 6. Response Structure
+
+Ensure the response structure matches the provided JSON format. This can be done by customizing the JSON serialization of models using Laravel's built-in functionalities or by manually constructing the response in the controller methods.
+
+### 7. Relational Module
+
+Use factories to generate relational data. For example:
+php
+$factory->define(App\Models\Product::class, function (Faker $faker) {
+    return [
+        'name' => $faker->word,
+        'sku' => $faker->unique()->numerify('SKU-#####'),
+        'symbology' => $faker->randomElement(['Code 128', 'EAN-13']),
+        'brand_id' => App\Models\Brand::factory(),
+        'category_id' => App\Models\Category::factory(),
+        'unit_id' => App\Models\Unit::factory(),
+        'price' => $faker->randomFloat(2, 1, 1000),
+        'qty' => $faker->numberBetween(1, 1000),
+        'alert_qty' => $faker->numberBetween(1, 100),
+        'tax_method' => $faker->randomElement(['Inclusive', 'Exclusive']),
+        'tax_id' => App\Models\Tax::factory(),
+        'has_stock' => $faker->boolean,
+        'has_expiry_date' => $faker->boolean,
+        'expiry_date' => $faker->optional()->date(),
+        'details' => $faker->text,
+        'is_active' => $faker->boolean,
+    ];
+});
+
+
+### 8. Sample Response
+
+Ensure the JSON response matches the provided example. This can be achieved by using resource classes for better control over the response data. For example:
+
+php
+php artisan make:resource ProductResource
+
+
+Define the structure in ProductResource.php:
+php
+class ProductResource extends JsonResource
+{
+    public function toArray($request)
+    {
+        return [
+            'Id' => $this->id,
+            'name' => $this->name,
+            'sku' => $this->sku,
+            'symbology' => $this->symbology,
+            'brand_id' => $this->brand_id,
+            'category_id' => $this->category_id,
+            'unit_id' => $this->unit_id,
+            'price' => $this->price,
+            'qty' => $this->qty,
+            'alert_qty' => $this->alert_qty,
+            'tax_method' => $this->tax_method,
+            'tax_id' => $this->tax_id,
+            'has_stock' => $this->has_stock,
+            'has_expiry_date' => $this->has_expiry_date,
+            'expiry_date' => $this->expiry_date,
+            'details' => $this->details,
+            'is_active' => $this->is_active,
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
+            'deleted_at' => $this->deleted_at,
+            'product_qties' => ProductQuantityResource::collection($this->whenLoaded('quantities')),
+            'attachments' => AttachmentResource::collection($this->whenLoaded('attachments')),
+            // Include nested relationships similarly
+        ];
+    }
+}
+
+
+Finally, use the resource in the controller methods:
+```php
+public function show($id)
+{
+    $product = Product::with(['brand', 'category', 'unit', 'tax', 'quantities', 'attachments'])->findOrFail($id);
